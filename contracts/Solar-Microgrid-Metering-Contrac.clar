@@ -8,6 +8,9 @@
 (define-constant ERR-ORACLE-NOT-AUTHORIZED u409)
 (define-constant ENERGY-RATE u100)
 (define-constant SURPLUS-TOKEN-RATE u80)
+(define-constant MIN-ENERGY-RATE u50)
+(define-constant MAX-ENERGY-RATE u200)
+(define-constant PRICE-ADJUSTMENT-FACTOR u10)
 
 (define-fungible-token surplus-energy)
 
@@ -15,6 +18,8 @@
 (define-data-var total-meters uint u0)
 (define-data-var oracle-address (optional principal) none)
 (define-data-var grid-balance uint u0)
+(define-data-var current-energy-rate uint ENERGY-RATE)
+(define-data-var last-rate-update uint u0)
 
 (define-map residents 
   principal 
@@ -153,7 +158,7 @@
       (meter-data (unwrap! (map-get? meters meter-id) (err ERR-METER-NOT-FOUND)))
       (consumption (get total-consumption meter-data))
       (generation (get total-generation meter-data))
-      (cost (* consumption ENERGY-RATE))
+      (cost (* consumption (var-get current-energy-rate)))
       (surplus-tokens (* generation SURPLUS-TOKEN-RATE))
     )
     (asserts! (is-eq tx-sender CONTRACT-OWNER) (err ERR-NOT-AUTHORIZED))
@@ -277,4 +282,61 @@
 
 (define-read-only (get-total-surplus-supply)
   (ft-get-supply surplus-energy)
+)
+
+(define-public (update-energy-rate)
+  (let 
+    (
+      (total-generation (fold + (map get-meter-generation (get-all-meter-ids)) u0))
+      (total-consumption (fold + (map get-meter-consumption (get-all-meter-ids)) u0))
+      (demand-ratio (if (is-eq total-generation u0) u100 (/ (* total-consumption u100) total-generation)))
+      (rate-increase (+ (var-get current-energy-rate) PRICE-ADJUSTMENT-FACTOR))
+      (rate-decrease (- (var-get current-energy-rate) PRICE-ADJUSTMENT-FACTOR))
+      (price-adjustment (if (> demand-ratio u100) 
+                          (if (> rate-increase MAX-ENERGY-RATE) MAX-ENERGY-RATE rate-increase)
+                          (if (< rate-decrease MIN-ENERGY-RATE) MIN-ENERGY-RATE rate-decrease)))
+    )
+    (asserts! (is-eq tx-sender CONTRACT-OWNER) (err ERR-NOT-AUTHORIZED))
+    (asserts! (> stacks-block-height (+ (var-get last-rate-update) u144)) (err ERR-INVALID-AMOUNT))
+    
+    (var-set current-energy-rate price-adjustment)
+    (var-set last-rate-update stacks-block-height)
+    (ok price-adjustment)
+  )
+)
+
+(define-read-only (get-current-energy-rate)
+  (var-get current-energy-rate)
+)
+
+(define-read-only (get-price-forecast)
+  (let 
+    (
+      (total-generation (fold + (map get-meter-generation (get-all-meter-ids)) u0))
+      (total-consumption (fold + (map get-meter-consumption (get-all-meter-ids)) u0))
+      (demand-ratio (if (is-eq total-generation u0) u100 (/ (* total-consumption u100) total-generation)))
+      (rate-increase (+ (var-get current-energy-rate) PRICE-ADJUSTMENT-FACTOR))
+      (rate-decrease (- (var-get current-energy-rate) PRICE-ADJUSTMENT-FACTOR))
+    )
+    {
+      current-rate: (var-get current-energy-rate),
+      demand-ratio: demand-ratio,
+      next-rate: (if (> demand-ratio u100) 
+                    (if (> rate-increase MAX-ENERGY-RATE) MAX-ENERGY-RATE rate-increase)
+                    (if (< rate-decrease MIN-ENERGY-RATE) MIN-ENERGY-RATE rate-decrease)),
+      last-update: (var-get last-rate-update)
+    }
+  )
+)
+
+(define-private (get-all-meter-ids)
+  (list u1 u2 u3 u4 u5 u6 u7 u8 u9 u10)
+)
+
+(define-private (get-meter-generation (meter-id uint))
+  (default-to u0 (get total-generation (map-get? meters meter-id)))
+)
+
+(define-private (get-meter-consumption (meter-id uint))
+  (default-to u0 (get total-consumption (map-get? meters meter-id)))
 )
