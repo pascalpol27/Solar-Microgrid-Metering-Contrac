@@ -11,6 +11,11 @@
 (define-constant MIN-ENERGY-RATE u50)
 (define-constant MAX-ENERGY-RATE u200)
 (define-constant PRICE-ADJUSTMENT-FACTOR u10)
+(define-constant GRID-HEALTH-EXCELLENT u90)
+(define-constant GRID-HEALTH-GOOD u70)
+(define-constant GRID-HEALTH-WARNING u50)
+(define-constant MAX-EFFICIENCY-LOSS u20)
+(define-constant ALERT-THRESHOLD u30)
 
 (define-fungible-token surplus-energy)
 
@@ -20,6 +25,9 @@
 (define-data-var grid-balance uint u0)
 (define-data-var current-energy-rate uint ENERGY-RATE)
 (define-data-var last-rate-update uint u0)
+(define-data-var grid-efficiency-score uint u100)
+(define-data-var last-health-check uint u0)
+(define-data-var active-alerts uint u0)
 
 (define-map residents 
   principal 
@@ -65,6 +73,28 @@
     consumption: uint,
     generation: uint,
     reported-by: principal
+  }
+)
+
+(define-map grid-performance 
+  uint 
+  {
+    timestamp: uint,
+    efficiency-score: uint,
+    generation-ratio: uint,
+    consumption-stability: uint,
+    alert-count: uint
+  }
+)
+
+(define-map performance-alerts 
+  {alert-id: uint} 
+  {
+    meter-id: uint,
+    severity: uint,
+    message: (string-ascii 100),
+    created-at: uint,
+    resolved: bool
   }
 )
 
@@ -339,4 +369,139 @@
 
 (define-private (get-meter-consumption (meter-id uint))
   (default-to u0 (get total-consumption (map-get? meters meter-id)))
+)
+
+(define-public (update-grid-health)
+  (let 
+    (
+      (total-generation (fold + (map get-meter-generation (get-all-meter-ids)) u0))
+      (total-consumption (fold + (map get-meter-consumption (get-all-meter-ids)) u0))
+      (generation-efficiency (if (is-eq total-consumption u0) u100 (/ (* total-generation u100) total-consumption)))
+      (stability-score (calculate-grid-stability))
+      (efficiency-score (if (> generation-efficiency u100) u100 generation-efficiency))
+      (current-alerts (var-get active-alerts))
+      (health-penalty (if (> current-alerts u5) u20 u0))
+      (final-score (if (> health-penalty efficiency-score) u0 (- efficiency-score health-penalty)))
+    )
+    (asserts! (is-eq tx-sender CONTRACT-OWNER) (err ERR-NOT-AUTHORIZED))
+    
+    (map-set grid-performance stacks-block-height {
+      timestamp: stacks-block-height,
+      efficiency-score: final-score,
+      generation-ratio: generation-efficiency,
+      consumption-stability: stability-score,
+      alert-count: current-alerts
+    })
+    
+    (var-set grid-efficiency-score final-score)
+    (var-set last-health-check stacks-block-height)
+    
+    (if (< final-score ALERT-THRESHOLD)
+      (unwrap-panic (create-system-alert u0 u3 "Critical grid efficiency detected"))
+      u0
+    )
+    
+    (ok final-score)
+  )
+)
+
+(define-public (create-performance-alert (meter-id uint) (severity uint) (message (string-ascii 100)))
+  (let ((alert-id (+ (var-get active-alerts) u1)))
+    (asserts! (is-eq tx-sender CONTRACT-OWNER) (err ERR-NOT-AUTHORIZED))
+    (asserts! (<= severity u3) (err ERR-INVALID-AMOUNT))
+    
+    (map-set performance-alerts {alert-id: alert-id} {
+      meter-id: meter-id,
+      severity: severity,
+      message: message,
+      created-at: stacks-block-height,
+      resolved: false
+    })
+    
+    (var-set active-alerts alert-id)
+    (ok alert-id)
+  )
+)
+
+(define-public (resolve-alert (alert-id uint))
+  (let ((alert-data (unwrap! (map-get? performance-alerts {alert-id: alert-id}) (err ERR-RESIDENT-NOT-FOUND))))
+    (asserts! (is-eq tx-sender CONTRACT-OWNER) (err ERR-NOT-AUTHORIZED))
+    (asserts! (not (get resolved alert-data)) (err ERR-ALREADY-EXISTS))
+    
+    (map-set performance-alerts {alert-id: alert-id} (merge alert-data {resolved: true}))
+    (ok true)
+  )
+)
+
+(define-private (create-system-alert (meter-id uint) (severity uint) (message (string-ascii 100)))
+  (let ((alert-id (+ (var-get active-alerts) u1)))
+    (map-set performance-alerts {alert-id: alert-id} {
+      meter-id: meter-id,
+      severity: severity,
+      message: message,
+      created-at: stacks-block-height,
+      resolved: false
+    })
+    
+    (var-set active-alerts alert-id)
+    (ok alert-id)
+  )
+)
+
+(define-private (calculate-grid-stability)
+  (let 
+    (
+      (active-meters (fold count-active-meters (get-all-meter-ids) u0))
+      (total-meter-count (var-get total-meters))
+      (stability-ratio (if (is-eq total-meter-count u0) u0 (/ (* active-meters u100) total-meter-count)))
+    )
+    stability-ratio
+  )
+)
+
+(define-private (count-active-meters (meter-id uint) (counter uint))
+  (if (is-meter-active meter-id) (+ counter u1) counter)
+)
+
+(define-private (is-meter-active (meter-id uint))
+  (default-to false (get active (map-get? meters meter-id)))
+)
+
+(define-read-only (get-grid-health-status)
+  (let ((current-score (var-get grid-efficiency-score)))
+    {
+      efficiency-score: current-score,
+      health-level: (if (>= current-score GRID-HEALTH-EXCELLENT) "excellent"
+                      (if (>= current-score GRID-HEALTH-GOOD) "good"
+                        (if (>= current-score GRID-HEALTH-WARNING) "warning" "critical"))),
+      active-alerts: (var-get active-alerts),
+      last-check: (var-get last-health-check)
+    }
+  )
+)
+
+(define-read-only (get-performance-history (target-block uint))
+  (map-get? grid-performance target-block)
+)
+
+(define-read-only (get-alert-details (alert-id uint))
+  (map-get? performance-alerts {alert-id: alert-id})
+)
+
+(define-read-only (get-grid-analytics)
+  (let 
+    (
+      (total-generation (fold + (map get-meter-generation (get-all-meter-ids)) u0))
+      (total-consumption (fold + (map get-meter-consumption (get-all-meter-ids)) u0))
+      (active-meters (fold count-active-meters (get-all-meter-ids) u0))
+    )
+    {
+      total-generation: total-generation,
+      total-consumption: total-consumption,
+      active-meters: active-meters,
+      efficiency-score: (var-get grid-efficiency-score),
+      generation-surplus: (if (> total-generation total-consumption) (- total-generation total-consumption) u0),
+      consumption-deficit: (if (> total-consumption total-generation) (- total-consumption total-generation) u0)
+    }
+  )
 )
