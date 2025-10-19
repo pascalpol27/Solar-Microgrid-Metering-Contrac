@@ -1,0 +1,42 @@
+[network]
+name = "simnet"
+
+[accounts.deployer]
+mnemonic = "twice kind fence tip hidden tilt action fragile skin nothing glory cousin green tomorrow spring wrist shed math olympic multiply hip blue scout claw"
+balance = 100_000_000_000_000
+
+[accounts.wallet_1]
+mnemonic = "sell invite acquire kitten bamboo drastic junk bought unlike stereo episode swim"
+balance = 100_000_000_000_000
+
+[accounts.wallet_2]
+mnemonic = "hold excess usual excess ring elephant install account glad dry fragile donkey"
+balance = 100_000_000_000_000
+
+[accounts.wallet_3]
+mnemonic = "board list obtain sugar hour worth raven scout denial thunder horse logic"
+balance = 100_000_000_000_000
+
+[accounts.wallet_4]
+mnemonic = "peace load fence choice mobile discover inch elite talk weird gap altar"
+balance = 100_000_000_000_000
+
+[accounts.wallet_5]
+mnemonic = "stone cursed sad mixed lift half fold domain narrow rib twice wing"
+balance = 100_000_000_000_000
+
+[accounts.wallet_6]
+mnemonic = "car ghost ancient proud travel giant result exotic oxygen mix cement dawn"
+balance = 100_000_000_000_000
+
+[accounts.wallet_7]
+mnemonic = "angry brass essay sauce sweet mother found tribe brief cannon grab noise"
+balance = 100_000_000_000_000
+
+[accounts.wallet_8]
+mnemonic = "side stuff access blue fever pair reduce special episode eight shelter card"
+balance = 100_000_000_000_000
+
+[accounts.wallet_9]
+mnemonic = "grace light elegant sun quick purchase grid west wine moral drive draft"
+balance = 100_000_000_000_000

@@ -1,0 +1,32 @@
+[network]
+name = "devnet"
+stacks_node_rpc_address = "http://localhost:20443"
+stacks_node_p2p_address = "localhost:20444"
+bitcoin_node_rpc_address = "http://localhost:18443"
+bitcoin_node_rpc_username = "devnet"
+bitcoin_node_rpc_password = "devnet"
+bitcoin_node_p2p_address = "localhost:18444"
+bitcoin_block_time = 30_000
+bitcoin_initial_block_height = 2000
+deployment_fee_rate = 10
+
+[accounts.deployer]
+mnemonic = "twice kind fence tip hidden tilt action fragile skin nothing glory cousin green tomorrow spring wrist shed math olympic multiply hip blue scout claw"
+balance = 100_000_000_000_000
+# Secret Key: 753414c512e7012e8f389b2529265d98ece1a79b11c338d70c47a4cad00bf9dc01
+# Address: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
+# BTC Address: mqVnk6NPRdhntvfm4hh9vvjiRkFDUuSYsH
+
+[accounts.wallet_1]
+mnemonic = "sell invite acquire kitten bamboo drastic junk bought unlike stereo episode swim"
+balance = 100_000_000_000_000
+# Secret Key: 7287ba251d44a4d3fd9276c88ce34c5c52a038955511cccaf77e61068649c17801
+# Address: ST1SJ3DTE5DN7X54YDH5D64R3BCB6A2AG2ZQ8YPD5
+# BTC Address: mr1iPkD9N3RJZZxXRk7xF9d36gffa6exNC
+
+[accounts.wallet_2]
+mnemonic = "hold excess usual excess ring elephant install account glad dry fragile donkey"
+balance = 100_000_000_000_000
+# Secret Key: 530d9f61984c888536871c6573073bdfc0058896dc1adfe9a6a10dfacadc209101
+# Address: ST2CY5V39NHDPWSXMW9QDT3HC3GD6Q6XX4CFRK9AG
+# BTC Address: muYdXKmX9bByAuUgst2uBrsukcdjG6s6EY
