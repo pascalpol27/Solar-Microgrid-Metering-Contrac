@@ -58,8 +58,8 @@
     )
 )
 
-(define-read-only (get-billing-record (meter principal) (block-height uint))
-    (map-get? billing-history {meter: meter, block-height: block-height})
+(define-read-only (get-billing-record (meter principal) (block-height-param uint))
+    (map-get? billing-history {meter: meter, block-height: block-height-param})
 )
 
 (define-read-only (calculate-energy-cost (kwh-amount uint))
@@ -77,7 +77,7 @@
             production: u0,
             consumption: u0,
             balance: 0,
-            last-reading-block: block-height,
+            last-reading-block: stacks-block-height,
             is-active: true
         })
         
@@ -96,10 +96,10 @@
                 (map-set energy-meters meter (merge meter-data {
                     production: (+ (get production meter-data) kwh-produced),
                     balance: (+ (get balance meter-data) (to-int energy-value)),
-                    last-reading-block: block-height
+                    last-reading-block: stacks-block-height
                 }))
                 
-                (map-set billing-history {meter: meter, block-height: block-height} {
+                (map-set billing-history {meter: meter, block-height: stacks-block-height} {
                     energy-produced: kwh-produced,
                     energy-consumed: u0,
                     net-amount: (to-int energy-value),
@@ -127,10 +127,10 @@
                 (map-set energy-meters meter (merge meter-data {
                     consumption: (+ (get consumption meter-data) kwh-consumed),
                     balance: (- (get balance meter-data) (to-int energy-cost)),
-                    last-reading-block: block-height
+                    last-reading-block: stacks-block-height
                 }))
                 
-                (map-set billing-history {meter: meter, block-height: block-height} {
+                (map-set billing-history {meter: meter, block-height: stacks-block-height} {
                     energy-produced: u0,
                     energy-consumed: kwh-consumed,
                     net-amount: (- 0 (to-int energy-cost)),
@@ -196,7 +196,7 @@
                 (if (> current-balance 0)
                     ;; Positive balance - meter has credit
                     (begin
-                        (map-set billing-history {meter: meter, block-height: block-height} {
+                        (map-set billing-history {meter: meter, block-height: stacks-block-height} {
                             energy-produced: u0,
                             energy-consumed: u0,
                             net-amount: current-balance,
