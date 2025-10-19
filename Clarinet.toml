@@ -1,0 +1,20 @@
+[project]
+name = "solar-microgrid-metering"
+description = "Smart contract for solar microgrid energy metering and billing"
+authors = ["pascalpol27@gmail.com"]
+telemetry = false
+cache_dir = "./.clarinet"
+
+[contracts.solar-microgrid-metering]
+path = "contracts/solar-microgrid-metering.clar"
+clarity_version = 3
+epoch = "3.0"
+
+[repl.analysis]
+passes = ["check_checker"]
+
+[repl.analysis.check_checker]
+strict = false
+trusted_sender = false
+trusted_caller = false
+callee_filter = false
