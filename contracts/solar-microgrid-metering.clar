@@ -8,14 +8,24 @@
 (define-constant ERR-INSUFFICIENT-BALANCE (err u103))
 (define-constant ERR-INVALID-RATE (err u104))
 (define-constant ERR-METER-ALREADY-EXISTS (err u105))
+(define-constant ERR-INSUFFICIENT-PRODUCTION (err u106))
+(define-constant ERR-INVALID-TIER (err u107))
+(define-constant ERR-NO-INCENTIVE-AVAILABLE (err u108))
 
 ;; Contract owner
 (define-constant CONTRACT-OWNER tx-sender)
 
 ;; Data variables
-(define-data-var energy-rate uint u50) ;; Rate per kWh in microSTX (0.00005 STX)
+(define-data-var energy-rate uint u50)
 (define-data-var total-energy-produced uint u0)
 (define-data-var total-energy-consumed uint u0)
+(define-data-var incentive-pool uint u0)
+(define-data-var incentive-tier-1-threshold uint u1000)
+(define-data-var incentive-tier-1-reward uint u100)
+(define-data-var incentive-tier-2-threshold uint u5000)
+(define-data-var incentive-tier-2-reward uint u500)
+(define-data-var incentive-tier-3-threshold uint u10000)
+(define-data-var incentive-tier-3-reward uint u1000)
 
 ;; Data maps
 (define-map energy-meters principal {
@@ -23,7 +33,9 @@
     consumption: uint,
     balance: int,
     last-reading-block: uint,
-    is-active: bool
+    is-active: bool,
+    incentive-claimed: bool,
+    total-incentives-earned: uint
 })
 
 (define-map billing-history {meter: principal, block-height: uint} {
@@ -33,10 +45,33 @@
     rate-applied: uint
 })
 
+(define-map incentive-claims {meter: principal, block-height: uint} {
+    tier: uint,
+    reward-amount: uint,
+    production-amount: uint
+})
+
 ;; Read-only functions
 
 (define-read-only (get-energy-rate)
     (var-get energy-rate)
+)
+
+(define-read-only (get-incentive-pool)
+    (var-get incentive-pool)
+)
+
+(define-read-only (calculate-incentive-tier (total-production uint))
+    (if (>= total-production (var-get incentive-tier-3-threshold))
+        (ok {tier: u3, reward: (var-get incentive-tier-3-reward)})
+        (if (>= total-production (var-get incentive-tier-2-threshold))
+            (ok {tier: u2, reward: (var-get incentive-tier-2-reward)})
+            (if (>= total-production (var-get incentive-tier-1-threshold))
+                (ok {tier: u1, reward: (var-get incentive-tier-1-reward)})
+                (err ERR-INSUFFICIENT-PRODUCTION)
+            )
+        )
+    )
 )
 
 (define-read-only (get-total-stats)
@@ -78,7 +113,9 @@
             consumption: u0,
             balance: 0,
             last-reading-block: stacks-block-height,
-            is-active: true
+            is-active: true,
+            incentive-claimed: false,
+            total-incentives-earned: u0
         })
         
         (ok true)
@@ -155,6 +192,87 @@
     )
 )
 
+(define-public (claim-incentive-reward (meter principal))
+    (begin
+        (asserts! (is-eq tx-sender CONTRACT-OWNER) ERR-NOT-AUTHORIZED)
+        
+        (match (map-get? energy-meters meter)
+            meter-data
+            (begin
+                (asserts! (not (get incentive-claimed meter-data)) ERR-NO-INCENTIVE-AVAILABLE)
+                
+                (let ((tier-result (calculate-incentive-tier (get production meter-data))))
+                    (match tier-result
+                        tier-info
+                        (let ((reward-amount (get reward tier-info))
+                              (current-incentive-pool (var-get incentive-pool)))
+                            (begin
+                                (asserts! (>= current-incentive-pool reward-amount) ERR-INSUFFICIENT-BALANCE)
+                                
+                                (map-set energy-meters meter (merge meter-data {
+                                    incentive-claimed: true,
+                                    balance: (+ (get balance meter-data) (to-int reward-amount)),
+                                    total-incentives-earned: (+ (get total-incentives-earned meter-data) reward-amount)
+                                }))
+                                
+                                (map-set incentive-claims {meter: meter, block-height: stacks-block-height} {
+                                    tier: (get tier tier-info),
+                                    reward-amount: reward-amount,
+                                    production-amount: (get production meter-data)
+                                })
+                                
+                                (var-set incentive-pool (- current-incentive-pool reward-amount))
+                                (ok {tier: (get tier tier-info), reward: reward-amount})
+                            )
+                        )
+                        error-code error-code
+                    )
+                )
+            )
+            ERR-METER-NOT-FOUND
+        )
+    )
+)
+
+(define-public (fund-incentive-pool (amount uint))
+    (begin
+        (asserts! (is-eq tx-sender CONTRACT-OWNER) ERR-NOT-AUTHORIZED)
+        (asserts! (> amount u0) ERR-INVALID-AMOUNT)
+        
+        (var-set incentive-pool (+ (var-get incentive-pool) amount))
+        (ok true)
+    )
+)
+
+(define-public (update-incentive-tier (tier uint) (threshold uint) (reward uint))
+    (begin
+        (asserts! (is-eq tx-sender CONTRACT-OWNER) ERR-NOT-AUTHORIZED)
+        (asserts! (and (> tier u0) (<= tier u3)) ERR-INVALID-TIER)
+        (asserts! (> threshold u0) ERR-INVALID-AMOUNT)
+        (asserts! (> reward u0) ERR-INVALID-AMOUNT)
+        
+        (if (is-eq tier u1)
+            (begin
+                (var-set incentive-tier-1-threshold threshold)
+                (var-set incentive-tier-1-reward reward)
+                (ok true)
+            )
+            (if (is-eq tier u2)
+                (begin
+                    (var-set incentive-tier-2-threshold threshold)
+                    (var-set incentive-tier-2-reward reward)
+                    (ok true)
+                )
+                (begin
+                    (var-set incentive-tier-3-threshold threshold)
+                    (var-set incentive-tier-3-reward reward)
+                    (ok true)
+                )
+            )
+        )
+    )
+)
+
 (define-public (deactivate-meter (meter principal))
     (begin
         (asserts! (is-eq tx-sender CONTRACT-OWNER) ERR-NOT-AUTHORIZED)
@@ -177,7 +295,7 @@
         (match (map-get? energy-meters meter)
             meter-data 
             (begin
-                (map-set energy-meters meter (merge meter-data {is-active: true}))
+                (map-set energy-meters meter (merge meter-data {is-active: true, incentive-claimed: false}))
                 (ok true)
             )
             ERR-METER-NOT-FOUND
